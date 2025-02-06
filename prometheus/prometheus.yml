@@ -1,0 +1,106 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'blackbox-exporter'
+    static_configs:
+      - targets: ['blackbox-exporter:9115']
+
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  - job_name: 'taiga-events-rabbitmq-exporter'
+    static_configs:
+      - targets: ['taiga-async-rabbitmq-exporter:9419']
+
+  - job_name: 'taiga-async-rabbitmq-exporter'
+    static_configs:
+      - targets: ['taiga-async-rabbitmq-exporter:9419']
+
+  - job_name: 'taiga-gateway'
+    metrics_path: /probe
+    params:
+      module: [taiga_gateway]
+    static_configs:
+      - targets:
+        - taiga-gateway:80
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: instance
+
+  - job_name: 'taiga-events'
+    metrics_path: /probe
+    params:
+      module: [taiga_events]
+    static_configs:
+      - targets:
+        - taiga-events:8888
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: instance
+
+  - job_name: 'taiga-protected'
+    metrics_path: /probe
+    params:
+      module: [taiga_protected]
+    static_configs:
+      - targets:
+        - taiga-protected:8003
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: instance
+
+  - job_name: 'taiga-back'
+    metrics_path: /probe
+    params:
+      module: [taiga_back]
+    static_configs:
+      - targets:
+        - http://taiga-back:8000
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: instance
+
+  - job_name: 'taiga-front'
+    metrics_path: /probe
+    params:
+      module: [taiga_front]
+    static_configs:
+      - targets:
+        - taiga-front:80
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: instance

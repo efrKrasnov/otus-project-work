@@ -39,6 +39,7 @@ x-volumes:
 services:
   taiga-db:
     image: postgres:12.3
+    container_name: taiga-db
     environment:
       POSTGRES_DB: "taiga"
       POSTGRES_USER: "${POSTGRES_USER}"
@@ -56,6 +57,7 @@ services:
 
   taiga-back:
     image: taigaio/taiga-back:latest
+    container_name: taiga-back
     environment: *default-back-environment
     volumes: *default-back-volumes
     networks:
@@ -70,6 +72,7 @@ services:
 
   taiga-async:
     image: taigaio/taiga-back:latest
+    container_name: taiga-async
     entrypoint: ["/taiga-back/docker/async_entrypoint.sh"]
     environment: *default-back-environment
     volumes: *default-back-volumes
@@ -85,6 +88,7 @@ services:
 
   taiga-async-rabbitmq:
     image: rabbitmq:3.8-management-alpine
+    container_name: taiga-async-rabbitmq
     environment:
       RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE}"
       RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER}"
@@ -98,6 +102,7 @@ services:
 
   taiga-front:
     image: taigaio/taiga-front:latest
+    container_name: taiga-front
     environment:
       TAIGA_URL: "${TAIGA_SCHEME}://${TAIGA_DOMAIN}"
       TAIGA_WEBSOCKETS_URL: "${WEBSOCKETS_SCHEME}://${TAIGA_DOMAIN}"
@@ -110,6 +115,7 @@ services:
 
   taiga-events:
     image: taigaio/taiga-events:latest
+    container_name: taiga-events
     environment:
       RABBITMQ_USER: "${RABBITMQ_USER}"
       RABBITMQ_PASS: "${RABBITMQ_PASS}"
@@ -122,6 +128,7 @@ services:
 
   taiga-events-rabbitmq:
     image: rabbitmq:3.8-management-alpine
+    container_name: taiga-events-rabbitmq
     environment:
       RABBITMQ_ERLANG_COOKIE: "${RABBITMQ_ERLANG_COOKIE}"
       RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER}"
@@ -135,6 +142,7 @@ services:
 
   taiga-protected:
     image: taigaio/taiga-protected:latest
+    container_name: taiga-protected
     environment:
       MAX_AGE: "${ATTACHMENTS_MAX_AGE}"
       SECRET_KEY: "${SECRET_KEY}"
@@ -143,6 +151,7 @@ services:
 
   taiga-gateway:
     image: nginx:1.19-alpine
+    container_name: taiga-gateway
     ports:
       - "9000:80"
     volumes:
@@ -156,12 +165,105 @@ services:
       - taiga-back
       - taiga-events
 
+  ### Далее идут моменты, связанные с конфигурацией observability
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - promtetheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    restart: always
+    networks:
+      - taiga
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.ignored-mount-points
+      - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
+    networks:
+      - taiga
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox-exporter
+    volumes:
+      - ./blackbox/blackbox.yml:/config/blackbox.yml
+    command:
+      - --config.file=/config/blackbox.yml
+    restart: always
+    networks:
+      - taiga
+    ports:
+      - "9115:9115"
+
+  # postgres-exporter:
+  #   image: bitnami/postgres-exporter:latest
+  #   container_name: postgres-exporter
+  #   environment:
+  #     - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@taiga:5432/taiga-db?sslmode=disable
+  #   restart: always
+  #   networks:
+  #     - taiga
+  #   depends_on:
+  #     taiga-db:
+  #       condition: service_healthy
+    
+
+  # nginx-exporter:
+  #   image: bitnami/nginx-exporter:latest
+  #   container_name: nginx-exporter
+  #   environment:
+  #     - NGINX_URL=http://nginx:9000
+  #   restart: always
+  #   networks:
+  #     - taiga
+  #   depends_on:
+  #     taiga-gateway:
+  #       condition: service_started
+
+  # taiga-async-rabbitmq-exporter:
+  #   image: kbudde/rabbitmq-exporter:latest
+  #   container_name: taiga-async-rabbitmq-exporter
+  #   hostname: taiga-async-rabbitmq-exporter
+  #   environment:
+  #     - RABBITMQ_SERVER=taiga-async-rabbitmq:15672
+  #     - RABBITMQ_USER=${RABBITMQ_USER}
+  #     - RABBITMQ_PASSWORD=${RABBITMQ_PASS}"
+  #   restart: always
+  #   networks:
+  #     - taiga
+
+  # taiga-events-rabbitmq-exporter:
+  #   image: kbudde/rabbitmq-exporter:latest
+  #   container_name: taiga-events-rabbitmq-exporter
+  #   hostname: taiga-events-rabbitmq-exporter
+  #   environment:
+  #     - RABBITMQ_SERVER=taiga-events-rabbitmq:15672
+  #     - RABBITMQ_USER=${RABBITMQ_USER}
+  #     - RABBITMQ_PASSWORD=${RABBITMQ_PASS}"
+  #   restart: always
+  #   networks:
+  #     - taiga
+
 volumes:
   taiga-static-data:
   taiga-media-data:
   taiga-db-data:
   taiga-async-rabbitmq-data:
   taiga-events-rabbitmq-data:
+  promtetheus_data:
 
 networks:
   taiga:

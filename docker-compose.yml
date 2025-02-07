@@ -95,6 +95,8 @@ services:
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASS}"
       RABBITMQ_DEFAULT_VHOST: "${RABBITMQ_VHOST}"
     hostname: "taiga-async-rabbitmq"
+    ports:
+      - "15672:15672"
     volumes:
       - taiga-async-rabbitmq-data:/var/lib/rabbitmq
     networks:
@@ -169,13 +171,19 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    hostname: prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - promtetheus_data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --web.console.templates=/etc/prometheus/consoles
+      - --storage.tsdb.retention.time=200h
+      - --web.enable-lifecycle
     ports:
-      - "9090:9090"
+      - "9090:9090" 
     restart: always
     networks:
       - taiga
@@ -194,6 +202,8 @@ services:
       - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
     networks:
       - taiga
+    depends_on:
+      - prometheus
 
   blackbox-exporter:
     image: prom/blackbox-exporter:latest
@@ -207,55 +217,69 @@ services:
       - taiga
     ports:
       - "9115:9115"
+    depends_on:
+      - prometheus
 
-  # postgres-exporter:
-  #   image: bitnami/postgres-exporter:latest
-  #   container_name: postgres-exporter
-  #   environment:
-  #     - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@taiga:5432/taiga-db?sslmode=disable
-  #   restart: always
-  #   networks:
-  #     - taiga
-  #   depends_on:
-  #     taiga-db:
-  #       condition: service_healthy
+  postgres-exporter:
+    image: bitnami/postgres-exporter:0.15.0
+    container_name: postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@taiga-db:5432/taiga?sslmode=disable
+    restart: always
+    networks:
+      - taiga
+    depends_on:
+      - prometheus
     
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.0
+    container_name: prometheus-exporter
+    restart: always
+    command:
+      - -nginx.scrape-uri=http://taiga-gateway:80/stub_status
+    networks:
+      - taiga
+    depends_on:
+      - prometheus
 
-  # nginx-exporter:
-  #   image: bitnami/nginx-exporter:latest
-  #   container_name: nginx-exporter
-  #   environment:
-  #     - NGINX_URL=http://nginx:9000
-  #   restart: always
-  #   networks:
-  #     - taiga
-  #   depends_on:
-  #     taiga-gateway:
-  #       condition: service_started
+  taiga-async-rabbitmq-exporter:
+    image: kbudde/rabbitmq-exporter:latest
+    container_name: taiga-async-rabbitmq-exporter
+    hostname: taiga-async-rabbitmq-exporter
+    environment:
+      - RABBIT_URL=http://taiga-async-rabbitmq:15672
+      - RABBIT_USER=${RABBITMQ_USER}
+      - RABBIT_PASSWORD=${RABBITMQ_PASS}
+    restart: always
+    networks:
+      - taiga
 
-  # taiga-async-rabbitmq-exporter:
-  #   image: kbudde/rabbitmq-exporter:latest
-  #   container_name: taiga-async-rabbitmq-exporter
-  #   hostname: taiga-async-rabbitmq-exporter
-  #   environment:
-  #     - RABBITMQ_SERVER=taiga-async-rabbitmq:15672
-  #     - RABBITMQ_USER=${RABBITMQ_USER}
-  #     - RABBITMQ_PASSWORD=${RABBITMQ_PASS}"
-  #   restart: always
-  #   networks:
-  #     - taiga
+  taiga-events-rabbitmq-exporter:
+    image: kbudde/rabbitmq-exporter:latest
+    container_name: taiga-events-rabbitmq-exporter
+    hostname: taiga-events-rabbitmq-exporter
+    environment:
+      - RABBIT_URL=http://taiga-events-rabbitmq:15672
+      - RABBIT_USER=${RABBITMQ_USER}
+      - RABBIT_PASSWORD=${RABBITMQ_PASS}
+    restart: always
+    networks:
+      - taiga
 
-  # taiga-events-rabbitmq-exporter:
-  #   image: kbudde/rabbitmq-exporter:latest
-  #   container_name: taiga-events-rabbitmq-exporter
-  #   hostname: taiga-events-rabbitmq-exporter
-  #   environment:
-  #     - RABBITMQ_SERVER=taiga-events-rabbitmq:15672
-  #     - RABBITMQ_USER=${RABBITMQ_USER}
-  #     - RABBITMQ_PASSWORD=${RABBITMQ_PASS}"
-  #   restart: always
-  #   networks:
-  #     - taiga
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GS_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - taiga
+    restart: always 
 
 volumes:
   taiga-static-data:
@@ -264,6 +288,7 @@ volumes:
   taiga-async-rabbitmq-data:
   taiga-events-rabbitmq-data:
   promtetheus_data:
-
+  grafana_data:
+  
 networks:
   taiga:

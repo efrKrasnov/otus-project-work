@@ -1,0 +1,127 @@
+[api]
+  enabled = true
+  address = "0.0.0.0:8686"
+
+# vector.toml
+[sources.nginx]
+  type = "file"
+  ignore_older_secs = 600
+  include = ["/var/log/apps/nginx/*.log"]
+  start_at_beginning = true
+
+[sources.events_rabbitmq]
+  type = "file"
+  ignore_older_secs = 600
+  include = ["/var/log/apps/events-rabbitmq/*.log"]
+  start_at_beginning = true
+
+[sources.async_rabbitmq]
+  type = "file"
+  ignore_older_secs = 600
+  include = ["/var/log/apps/async-rabbitmq/*.log"]
+  start_at_beginning = true
+
+[sources.postgres]
+  type = "file"
+  ignore_older_secs = 600
+  include = ["/var/log/apps/postgres/*.log"]
+  start_at_beginning = true
+
+[sources.docker_logs]
+type = "fluent"
+address = "0.0.0.0:6000"
+
+[transforms.parse_nginx_logs]
+  type = "remap"
+  inputs = ["nginx"]
+  source = '''
+    log(., level: "info", rate_limit_secs: 1)
+    parts, error = parse_grok(
+      .message,
+      s'%{IPORHOST:remote_addr} - %{DATA:remote_user} \[%{HTTPDATE:timestamp}\] \"%{WORD:method} %{DATA:request_uri} HTTP/%{NUMBER:http_version}\" %{NUMBER:status} %{NUMBER:body_bytes_sent} \"%{DATA:referrer}\" \"%{DATA:agent}\"'
+    )
+    if error == null {
+        .nginx = {
+          "remote_addr": parts.remote_addr,
+          "remote_user": parts.remote_user,
+          "timestamp": parts.timestamp,
+          "method": parts.method,
+          "request_uri": parts.request_uri,
+          "http_version": parts.http_version,
+          "status": parts.status,
+          "body_bytes_sent": parts.body_bytes_sent,
+          "referer": parts.referer,
+          "agent": parts.agent
+        }
+        log(., level: "info", rate_limit_secs: 1)
+    }
+  '''
+
+[transforms.parse_events_rabbit_logs]
+  type = "remap"
+  inputs = ["events_rabbitmq"]
+  source = '''
+    log(., level: "info", rate_limit_secs: 1)
+    parts, error = parse_grok(
+      .message,
+      s'%{BASE10NUM:pid} *%{DATE}: %{TIME} \[%{GREEDYDATA:module}\] %{LOGLEVEL:severity}: %{GREEDYDATA:message}'
+    )
+    if error == null {
+        .events_rabbitmq = {
+          "pid": parts.pid,
+          "module": parts.module,
+          "severity": parts.severity,
+          "message": parts.message,
+        }
+        log(., level: "info", rate_limit_secs: 1)
+    }
+  '''
+
+[transforms.parse_async_rabbit_logs]
+  type = "remap"
+  inputs = ["async_rabbitmq"]
+  source = '''
+    log(., level: "info", rate_limit_secs: 1)
+    parts, error = parse_grok(
+      .message,
+      s'%{BASE10NUM:pid} *%{DATE}: %{TIME} \[%{GREEDYDATA:module}\] %{LOGLEVEL:severity}: %{GREEDYDATA:message}'
+    )
+    if error == null {
+        .async_rabbitmq = {
+          "pid": parts.pid,
+          "module": parts.module,
+          "severity": parts.severity,
+          "message": parts.message,
+        }
+        log(., level: "info", rate_limit_secs: 1)
+    }
+  '''
+
+[transforms.parse_postgres_logs]
+  type = "remap"
+  inputs = ["postgres"]
+  source = '''
+    log(., level: "info", rate_limit_secs: 1)
+    parts, error = parse_grok(
+      .message,
+      s'%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:severity} %{GREEDYDATA:process} %{GREEDYDATA:message}'
+    )
+    if error == null {
+        .postgres = {
+        "timestamp": parts.timestamp,
+        "severity": parts.severity,
+        "process": parts.process,
+        "message": parts.message,
+        }
+        log(., level: "info", rate_limit_secs: 1)
+    }
+  '''
+[sinks.elasticsearch]
+  type = "elasticsearch"
+  inputs = ["docker_logs", "parse_nginx_logs", "parse_events_rabbit_logs", "parse_async_rabbit_logs", "parse_postgres_logs"]
+  endpoints = ["http://elasticsearch:9200"]
+  auth.strategy = "basic"
+  auth.user = "logstash_internal"
+  auth.password = "${LOGSTASH_INTERNAL_PASSWORD}"
+  bulk.index = "vector-%Y.%m.%d"
+  tls.verify_certificate = false

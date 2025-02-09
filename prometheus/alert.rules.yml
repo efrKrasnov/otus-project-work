@@ -1,0 +1,56 @@
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Нода {{ $labels.instance }} упала"
+      description: "{{ $labels.instance }} на которой работает {{ $labels.job }} лежит больше нескольких минут"
+
+  - alert: HighTrafficIncoming
+    expr: rate(nginx_http_requests_total[5m]) > 1000
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High incoming traffic on {{ $labels.instance }}"
+      description: "{{ $labels.instance }} has received more than 1000 requests per second for 2 minutes."
+
+  - alert: RabbitMQQueueLengthHigh
+    expr: rabbitmq_queue_messages > 100
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RabbitMQ queue length high on {{ $labels.instance }}"
+      description: "RabbitMQ queue {{ $labels.queue }} has more than 100 messages for 5 minutes."
+
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage on {{ $labels.instance }}"
+      description: "{{ $labels.instance }} has high CPU usage (above 80%) for 5 minutes."
+
+  - alert: HighRAMUsage
+    expr: 100 - (100 * (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High RAM usage on {{ $labels.instance }}"
+      description: "{{ $labels.instance }} has high RAM usage (above 80%) for 5 minutes."
+
+  - alert: HighSwapUsage
+    expr: (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / node_memory_SwapTotal_bytes * 100 > 60
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High swap usage on {{ $labels.instance }}"
+      description: "{{ $labels.instance }} has high swap usage (above 20%) for 5 minutes."

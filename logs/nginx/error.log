@@ -1,0 +1,1 @@
+2025/02/09 14:16:11 [warn] 32#32: *17 an upstream response is buffered to a temporary file /var/cache/nginx/proxy_temp/1/00/0000000001 while reading upstream, client: 172.18.0.1, server: , request: "GET /v-1721729942015/js/app.js HTTP/1.1", upstream: "http://172.18.0.9:80/v-1721729942015/js/app.js", host: "localhost:9000", referrer: "http://localhost:9000/"

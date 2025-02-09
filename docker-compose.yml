@@ -40,10 +40,12 @@ services:
   taiga-db:
     image: postgres:12.3
     container_name: taiga-db
+    user: root
     environment:
       POSTGRES_DB: "taiga"
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/var/log/postgresql", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 2s
@@ -51,9 +53,18 @@ services:
       retries: 5
       start_period: 3s
     volumes:
-      - taiga-db-data:/var/lib/postgresql/data
+      - taiga-db-data:/var/lib/postgresql/data:z
+      - ./logs/postgres:/var/log/postgresql:z
     networks:
       - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-db
+    depends_on:
+      vector:
+        condition: service_healthy
 
   taiga-back:
     image: taigaio/taiga-back:latest
@@ -69,6 +80,14 @@ services:
         condition: service_started
       taiga-async-rabbitmq:
         condition: service_started
+      vector:
+        condition: service_healthy
+
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-back
 
   taiga-async:
     image: taigaio/taiga-back:latest
@@ -85,6 +104,13 @@ services:
         condition: service_started
       taiga-async-rabbitmq:
         condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-async
 
   taiga-async-rabbitmq:
     image: rabbitmq:3.8-management-alpine
@@ -95,12 +121,19 @@ services:
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASS}"
       RABBITMQ_DEFAULT_VHOST: "${RABBITMQ_VHOST}"
     hostname: "taiga-async-rabbitmq"
-    ports:
-      - "15672:15672"
     volumes:
       - taiga-async-rabbitmq-data:/var/lib/rabbitmq
+      - ./logs/async-rabbitmq:/var/log/rabbitmq
     networks:
       - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-async-rabbitmq
+    depends_on:
+      vector:
+        condition: service_healthy
 
   taiga-front:
     image: taigaio/taiga-front:latest
@@ -112,6 +145,14 @@ services:
       # ...your customizations go here
     networks:
       - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-front
+    depends_on:
+      vector:
+        condition: service_healthy
     # volumes:
     #   - ./conf.json:/usr/share/nginx/html/conf.json
 
@@ -127,6 +168,13 @@ services:
     depends_on:
       taiga-events-rabbitmq:
         condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-events
 
   taiga-events-rabbitmq:
     image: rabbitmq:3.8-management-alpine
@@ -139,8 +187,17 @@ services:
     hostname: "taiga-events-rabbitmq"
     volumes:
       - taiga-events-rabbitmq-data:/var/lib/rabbitmq
+      - ./logs/events-rabbitmq:/var/log/rabbitmq
     networks:
       - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-events-rabbitmq
+    depends_on:
+      vector:
+        condition: service_healthy
 
   taiga-protected:
     image: taigaio/taiga-protected:latest
@@ -150,6 +207,14 @@ services:
       SECRET_KEY: "${SECRET_KEY}"
     networks:
       - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-protected
+    depends_on:
+      vector:
+        condition: service_healthy
 
   taiga-gateway:
     image: nginx:1.19-alpine
@@ -160,12 +225,24 @@ services:
       - ./taiga-gateway/taiga.conf:/etc/nginx/conf.d/default.conf
       - taiga-static-data:/taiga/static
       - taiga-media-data:/taiga/media
+      - ./logs/nginx:/var/log/nginx
     networks:
       - taiga
     depends_on:
-      - taiga-front
-      - taiga-back
-      - taiga-events
+      taiga-front:
+        condition: service_started
+      taiga-back:
+        condition: service_started
+      taiga-events:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-gateway
+    
 
   ### Далее идут моменты, связанные с конфигурацией observability
   prometheus:
@@ -174,6 +251,7 @@ services:
     hostname: prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml
       - promtetheus_data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -187,6 +265,15 @@ services:
     restart: always
     networks:
       - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: prometheus
+    depends_on:
+      vector:
+        condition: service_healthy
+    
 
   node-exporter:
     image: prom/node-exporter:latest
@@ -203,7 +290,15 @@ services:
     networks:
       - taiga
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-gateway
 
   blackbox-exporter:
     image: prom/blackbox-exporter:latest
@@ -218,7 +313,15 @@ services:
     ports:
       - "9115:9115"
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: blackbox-exporter
 
   postgres-exporter:
     image: bitnami/postgres-exporter:0.15.0
@@ -229,7 +332,15 @@ services:
     networks:
       - taiga
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: postgres-exporter
     
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:1.0
@@ -240,7 +351,15 @@ services:
     networks:
       - taiga
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: nginx-exporter
 
   taiga-async-rabbitmq-exporter:
     image: kbudde/rabbitmq-exporter:latest
@@ -253,6 +372,16 @@ services:
     restart: always
     networks:
       - taiga
+    depends_on:
+      prometheus:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-async-rabbitmq-exporter
 
   taiga-events-rabbitmq-exporter:
     image: kbudde/rabbitmq-exporter:latest
@@ -265,6 +394,16 @@ services:
     restart: always
     networks:
       - taiga
+    depends_on:
+      prometheus:
+        condition: service_started
+      vector:
+        condition: service_healthy
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-events-rabbitmq-exporter
 
   grafana:
     image: grafana/grafana:latest
@@ -280,6 +419,130 @@ services:
     networks:
       - taiga
     restart: always 
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: taiga-events-rabbitmq-exporter
+    depends_on:
+      vector:
+        condition: service_healthy
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alertmanager/template.tmpl:/etc/alertmanager/template.tmpl
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"  # Alertmanager web UI
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    restart: always
+    networks:
+      - taiga
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: tcp://localhost:6000
+        tag: alertmanager
+    depends_on:
+      vector:
+        condition: service_healthy
+
+  elasticsearch:
+    container_name: elasticsearch
+    build:
+      context: elasticsearch/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro,Z
+      - elasticsearch-2:/usr/share/elasticsearch/data:Z
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      node.name: elasticsearch
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      discovery.type: single-node
+    restart: unless-stopped
+    networks:
+      - taiga
+    healthcheck:
+      test: curl -s http://elasticsearch:9200 >/dev/null || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 50
+
+  kibana:
+    container_name: kibana
+    build:
+      context: kibana/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro,Z
+    ports:
+      - 5601:5601
+    environment:
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - taiga
+
+  vector:
+    image: timberio/vector:latest
+    build:
+      context: vector/
+    container_name: vector
+    volumes:
+      - ./vector/config/vector.toml:/etc/vector/vector.toml
+      - ./logs:/var/log/apps
+    command: --config /etc/vector/vector.toml
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+    ports:
+      - 8686:8686
+      - 6000:6000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "6000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - taiga
+
+  es_setup:
+    container_name: es_setup
+    profiles:
+      - setup
+    build:
+      context: setup/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    init: true
+    volumes:
+      - ./setup/entrypoint.sh:/entrypoint.sh:ro,Z
+      - ./setup/lib.sh:/lib.sh:ro,Z
+      - ./setup/roles:/roles:ro,Z
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+      BEATS_SYSTEM_PASSWORD: ${BEATS_SYSTEM_PASSWORD:-}
+    depends_on:
+      - elasticsearch
+    networks:
+      - taiga
 
 volumes:
   taiga-static-data:
@@ -287,8 +550,11 @@ volumes:
   taiga-db-data:
   taiga-async-rabbitmq-data:
   taiga-events-rabbitmq-data:
+
   promtetheus_data:
   grafana_data:
+  alertmanager_data:
+  elasticsearch-2:
   
 networks:
   taiga:

@@ -1,0 +1,29 @@
+
+{{ define "alert_list" }}{{ range . }}
+---
+🪪 <b>{{ .Labels.alertname }}</b>
+{{- if eq .Labels.severity "critical" }}
+🚨 ОЧЕНЬ ВАЖНО 🚨 {{ end }}
+{{- if eq .Labels.severity "warning" }}
+⚠️ ПРЕДУПРЕЖДЕНИЕ ⚠️{{ end }}
+{{- if .Annotations.summary }}
+📝 {{ .Annotations.summary }}{{ end }}
+{{- if .Annotations.description }}
+📖 {{ .Annotations.description }}{{ end }}
+
+🏷 Метки:
+{{ range .Labels.SortedPairs }}  <i>{{ .Name }}</i>: <code>{{ .Value }}</code>
+{{ end }}{{ end }}
+🛠 <a href="http://localhost:3000">Grafana</a> 💊 <a href="http://localhost:9093">Alertmanager</a>🛠
+{{ end }}
+
+{{ define "telegram.message" }}
+{{ if gt (len .Alerts.Firing) 0 }}
+🔥 Возник Алерт 🔥
+{{ template "alert_list" .Alerts.Firing }}
+{{ end }}
+{{ if gt (len .Alerts.Resolved) 0 }}
+✅ Алерт Решен ✅
+{{ template "alert_list" .Alerts.Resolved }}
+{{ end }}
+{{ end }}

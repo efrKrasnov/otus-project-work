@@ -104,3 +104,11 @@ scrape_configs:
         replacement: blackbox-exporter:9115
       - source_labels: [__param_target]
         target_label: instance
+
+alerting:
+  alertmanagers:
+    - static_configs:
+      - targets: ['alertmanager:9093']
+
+rule_files:
+  - "/etc/prometheus/alert.rules.yml"

@@ -116,12 +116,44 @@ address = "0.0.0.0:6000"
         log(., level: "info", rate_limit_secs: 1)
     }
   '''
-[sinks.elasticsearch]
+
+[sinks.elasticsearch_docker_logs]
   type = "elasticsearch"
-  inputs = ["docker_logs", "parse_nginx_logs", "parse_events_rabbit_logs", "parse_async_rabbit_logs", "parse_postgres_logs"]
+  inputs = ["docker_logs"]
   endpoints = ["http://elasticsearch:9200"]
   auth.strategy = "basic"
   auth.user = "logstash_internal"
   auth.password = "${LOGSTASH_INTERNAL_PASSWORD}"
-  bulk.index = "vector-%Y.%m.%d"
+  bulk.index = "container_logs-%Y.%m.%d"
   tls.verify_certificate = false
+
+[sinks.elasticsearch_nginx_logs]
+  type = "elasticsearch"
+  inputs = ["parse_nginx_logs"]
+  endpoints = ["http://elasticsearch:9200"]
+  auth.strategy = "basic"
+  auth.user = "logstash_internal"
+  auth.password = "${LOGSTASH_INTERNAL_PASSWORD}"
+  bulk.index = "nginx_logs-%Y.%m.%d"
+  tls.verify_certificate = false
+
+[sinks.elasticsearch_rabbit_logs]
+  type = "elasticsearch"
+  inputs = ["parse_events_rabbit_logs", "parse_async_rabbit_logs"]
+  endpoints = ["http://elasticsearch:9200"]
+  auth.strategy = "basic"
+  auth.user = "logstash_internal"
+  auth.password = "${LOGSTASH_INTERNAL_PASSWORD}"
+  bulk.index = "rmq_logs-%Y.%m.%d"
+  tls.verify_certificate = false
+
+[sinks.elasticsearch_postgres_logs]
+  type = "elasticsearch"
+  inputs = ["parse_postgres_logs"]
+  endpoints = ["http://elasticsearch:9200"]
+  auth.strategy = "basic"
+  auth.user = "logstash_internal"
+  auth.password = "${LOGSTASH_INTERNAL_PASSWORD}"
+  bulk.index = "postgres_logs-%Y.%m.%d"
+  tls.verify_certificate = false
+
